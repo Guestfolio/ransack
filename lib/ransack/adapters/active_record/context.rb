@@ -155,8 +155,14 @@ module Ransack
         else
           def remove_association(association)
             return if @lock_associations.include?(association)
+            i = @object.joins_values.index(association)
             @join_dependency.join_parts.delete(association)
             @object.joins_values.delete(association)
+
+            while(@object.joins_values[i].is_a?(String) &&
+                @object.joins_values[i].start_with?("AND"))
+              @object.joins_values.delete_at(i)
+            end
           end
         end
 
@@ -183,13 +189,13 @@ module Ransack
           join_root = join_constraints.shift
           join_table = join_root.left
           correlated_key = join_root.right.expr.left
+          if (correlated_key.is_a?(Arel::Nodes::Equality))
+            correlated_key = correlated_key.left
+          end
           subquery = Arel::SelectManager.new(association.base_klass)
           subquery.from(join_root.left)
+          subquery.where(join_root.right.expr)
           subquery.project(correlated_key)
-          join_constraints.each do |j|
-            subquery.join_sources << Arel::Nodes::InnerJoin.new(j.left, j.right)
-          end
-          subquery.where(correlated_key.eq(primary_key))
         end
 
         def primary_key
