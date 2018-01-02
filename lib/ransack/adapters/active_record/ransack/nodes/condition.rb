@@ -3,11 +3,11 @@ module Ransack
     class Condition
 
       def arel_predicate
-        attributes.map { |attribute|
+        predicates = attributes.map { |attribute|
           association = attribute.parent
           if negative? && attribute.associated_collection?
             query = context.build_correlated_subquery(association)
-            context.remove_association(association)
+            context.remove_default_scope(association)
             if self.predicate_name == 'not_null' && self.value
               query.where(format_predicate(attribute))
               Arel::Nodes::In.new(context.primary_key, Arel.sql(query.to_sql))
