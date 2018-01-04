@@ -8,6 +8,7 @@ module Ransack
           if negative? && attribute.associated_collection?
             query = context.build_correlated_subquery(association)
             context.remove_default_scope(association)
+            association.reflection.options[:with_deleted] = 1
             if self.predicate_name == 'not_null' && self.value
               query.where(format_predicate(attribute))
               Arel::Nodes::In.new(context.primary_key, Arel.sql(query.to_sql))
