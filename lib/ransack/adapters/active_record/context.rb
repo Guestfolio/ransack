@@ -155,8 +155,14 @@ module Ransack
         else
           def remove_association(association)
             return if @lock_associations.include?(association)
+            i = @object.joins_values.index(association)
             @join_dependency.join_parts.delete(association)
             @object.joins_values.delete(association)
+
+            while(@object.joins_values[i].is_a?(String) &&
+                @object.joins_values[i].start_with?("AND"))
+              @object.joins_values.delete_at(i)
+            end
           end
         end
 
@@ -183,13 +189,52 @@ module Ransack
           join_root = join_constraints.shift
           join_table = join_root.left
           correlated_key = join_root.right.expr.left
+          if (correlated_key.is_a?(Arel::Nodes::Equality))
+            correlated_key = correlated_key.left
+          end
           subquery = Arel::SelectManager.new(association.base_klass)
           subquery.from(join_root.left)
-          subquery.project(correlated_key)
-          join_constraints.each do |j|
-            subquery.join_sources << Arel::Nodes::InnerJoin.new(j.left, j.right)
+
+          if join_sources.count > 1
+            if (join_table.is_a?(Arel::Nodes::TableAlias))
+              right = Arel::Attributes::Attribute.new(join_table, join_sources.last.right.expr.right.name)
+              expression = Arel::Nodes::Equality.new(join_sources.last.right.expr.left, right)
+            else
+              expression = join_sources.last.right.expr
+            end
+            subquery.join(join_sources.last.left).on(expression)
           end
-          subquery.where(correlated_key.eq(primary_key))
+
+          subquery.where(join_root.right.expr)
+          subquery.project(correlated_key)
+        end
+
+        if ::ActiveRecord::VERSION::STRING >= Constants::RAILS_4_1
+          def remove_default_scope(association)
+            #TODO
+          end
+        else
+
+          def remove_default_scope(association)
+            default_conditions = association.active_record.scoped.arel.constraints
+
+            hacked_conditions = []
+            i = @object.joins_values.index(association) + 1
+            while (next_item = @object.joins_values[i])
+              if (next_item).is_a?(String) && next_item.start_with?("AND")
+                hacked_conditions << @object.joins_values.delete_at(i)[4..-1]
+              else
+                i = i+1
+              end
+            end
+
+            if (hacked_conditions)
+              hacked_conditions.each do |condition|
+                object.where_values << condition
+              end
+            end
+
+          end
         end
 
         def primary_key

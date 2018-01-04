@@ -114,11 +114,60 @@ module Ransack
             arthur.tags << fantasy
           end
 
-          it 'removes redundant joins from top query' do
-            s = Article.ransack(tags_name_not_eq: "Fantasy")
-            sql = s.result.to_sql
+          it 'removes default scope from join' do
+            class TestArticle < Article
+              self.default_scopes = []
+              if ::ActiveRecord::VERSION::STRING >= '3.1'
+                default_scope -> { where("published = ?", false) }
+              else # Rails 3.0 does not accept a block
+                default_scope where(published: false)
+              end
 
-            expect(sql).to_not include('LEFT OUTER JOIN')
+            end
+
+            class TestPerson < Person
+              self.table_name = 'people'
+              has_many :test_articles, class_name: "TestArticle", foreign_key: "person_id"
+            end
+
+            person1 = TestPerson.create!(name: 'Person1')
+            person2 = TestPerson.create!(name: 'Person2')
+            TestArticle.create!(person: person1, title: 'Article 1', subject_header: 'header1', published: 0)
+            TestArticle.create!(person: person1, title: 'Article 2', subject_header: 'header2', published: 0)
+            TestArticle.create!(person: person2, title: 'Article 3', subject_header: 'header1', published: 1)
+
+            s = TestPerson.ransack("test_articles_subject_header_not_eq" => "header2")
+            people = s.result.to_a
+
+            expect(people).to_not include person1, person2
+          end
+
+          it 'handles != for single has_many values' do
+            person1 = Person.create!(name: 'Person1')
+            person2 = Person.create!(name: 'Person2')
+            article1 = Article.create!(person: person1, title: 'Article 1', subject_header: 'header1')
+            article2 = Article.create!(person: person1, title: 'Article 2', subject_header: 'header2')
+            article3 = Article.create!(person: person2, title: 'Article 3', subject_header: 'header2')
+
+            result = Person.ransack("articles_subject_header_not_eq" => "header1").result
+            people = result.to_a
+
+            expect(people).to include person2
+            expect(people).to_not include person1
+          end
+
+          it 'moves the default scope from the join' do
+            person1 = Person.create!(name: 'Person1')
+            person2 = Person.create!(name: 'Person2')
+            article1 = Article.create!(person: person1, title: 'Article 1', subject_header: 'header1')
+            article2 = Article.create!(person: person1, title: 'Article 2', subject_header: 'header2')
+            article3 = Article.create!(person: person2, title: 'Article 3', subject_header: 'header2')
+
+            result = Person.ransack("articles_subject_header_not_eq" => "header1").result
+            people = result.to_a
+
+            expect(people).to include person2
+            expect(people).to_not include person1
           end
 
           it 'handles != for single values' do
